@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, fs, path::Path};
+use std::{collections::HashMap, env, ffi::OsStr, fs, path::Path};
 
 use anyhow::{Context, Result};
 use beam_file::{
@@ -30,28 +30,45 @@ fn main() -> Result<()> {
     let args: Vec<_> = env::args().collect();
     let path = &args[1];
 
-    read_app(&mut interner, &mut modules, Path::new(path))?;
+    let (app, loaded_modules) = read_app(&mut interner, &mut modules, Path::new(path))?;
 
-    println!("modules: {:#?}", modules.keys().len());
+    println!("{}: {} modules", app, loaded_modules.len());
+    println!("total modules: {}", modules.keys().len());
+    println!("total atoms: {}", interner.len());
 
     Ok(())
 }
 
-fn read_app(interner: &mut StringInterner, modules: &mut Modules, ebin_path: &Path) -> Result<()> {
+fn read_app(
+    interner: &mut StringInterner,
+    modules: &mut Modules,
+    ebin_path: &Path,
+) -> Result<(String, Vec<Atom>)> {
+    let mut app_modules = vec![];
+    let mut app_name = None;
+
     for entry in fs::read_dir(ebin_path)? {
         let entry = entry?;
         let path = entry.path();
-        let metadata = fs::metadata(&path)?;
 
-        if path.extension().unwrap() == "beam" && metadata.is_file() {
-            let (module, imports, exports) = read_module(interner, &path)
-                .with_context(|| format!("Failed to read BEAM file: {:?}", &path))?;
+        if let Some(extension) = path.extension().and_then(OsStr::to_str) {
+            match extension {
+                "beam" => {
+                    let (module, imports, exports) = read_module(interner, &path)
+                        .with_context(|| format!("Failed to read BEAM file: {:?}", &path))?;
 
-            modules.insert(module, (imports, exports));
+                    app_modules.push(module);
+                    modules.insert(module, (imports, exports));
+                }
+                "app" => {
+                    app_name = path.file_stem().and_then(OsStr::to_str).map(str::to_string);
+                }
+                _ => anyhow::bail!("unexpected file: {:?}", path),
+            }
         }
     }
 
-    Ok(())
+    Ok((app_name.unwrap(), app_modules))
 }
 
 fn read_module(
