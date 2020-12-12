@@ -32,10 +32,21 @@ fn main() -> Result<()> {
     let args: Vec<_> = env::args().collect();
     let path = &args[1];
 
-    let (app, loaded_modules) = read_app(&mut interner, &mut modules, Path::new(path))?;
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let path = entry.path();
+        let metadata = fs::metadata(&path)?;
 
-    println!("{}: {} modules", interner.resolve(app.0).unwrap(), loaded_modules.len());
-    println!("total modules: {}", modules.keys().len());
+        if metadata.is_dir() {
+            let ebin_path = path.join("ebin");
+            let (app, loaded_modules) = read_app(&mut interner, &mut modules, &ebin_path)?;
+
+            println!("{}: {} modules", interner.resolve(app.0).unwrap(), loaded_modules.len());
+        }
+
+    }
+
+    println!("\ntotal modules: {}", modules.keys().len());
     println!("total atoms: {}", interner.len());
 
     Ok(())
@@ -66,6 +77,7 @@ fn read_app(
                     app_name = path.file_stem().and_then(OsStr::to_str).map(|app| Atom(interner.get_or_intern(app)));
                 }
                 "appup" => continue,
+                "hrl" => continue,
                 _ => anyhow::bail!("unexpected file: {:?}", path),
             }
         }
