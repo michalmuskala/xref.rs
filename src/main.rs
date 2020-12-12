@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, path::Path};
+use std::{collections::HashMap, env, fs, path::Path};
 
 use anyhow::{Context, Result};
 use beam_file::{
@@ -14,7 +14,7 @@ type Imports = HashMap<Atom, Vec<(Atom, u32)>>;
 
 type Exports = Vec<(Atom, u32)>;
 
-// type Modules = HashMap<Atom, (Exports, Imports)>;
+type Modules = HashMap<Atom, (Imports, Exports)>;
 
 // #[derive(Debug)]
 // enum Error {
@@ -30,12 +30,26 @@ fn main() -> Result<()> {
     let args: Vec<_> = env::args().collect();
     let path = &args[1];
 
-    let (module, imports, exports) = read_module(&mut interner, Path::new(path))
-        .with_context(|| format!("Failed to read BEAM file: {}", path))?;
+    read_app(&mut interner, &mut modules, Path::new(path))?;
 
-    modules.insert(module, (imports, exports));
+    println!("modules: {:#?}", modules.keys().len());
 
-    println!("modules: {:#?}", modules);
+    Ok(())
+}
+
+fn read_app(interner: &mut StringInterner, modules: &mut Modules, ebin_path: &Path) -> Result<()> {
+    for entry in fs::read_dir(ebin_path)? {
+        let entry = entry?;
+        let path = entry.path();
+        let metadata = fs::metadata(&path)?;
+
+        if path.extension().unwrap() == "beam" && metadata.is_file() {
+            let (module, imports, exports) = read_module(interner, &path)
+                .with_context(|| format!("Failed to read BEAM file: {:?}", &path))?;
+
+            modules.insert(module, (imports, exports));
+        }
+    }
 
     Ok(())
 }
@@ -79,9 +93,9 @@ fn load_imports(atoms: &[Atom], import_chunk: &ImpTChunk) -> Imports {
 
     for import in import_chunk.imports.iter() {
         imports
-            .entry(atoms[import.module as usize])
+            .entry(atoms[import.module as usize - 1])
             .or_default()
-            .push((atoms[import.function as usize], import.arity))
+            .push((atoms[import.function as usize - 1], import.arity))
     }
 
     imports
@@ -91,6 +105,6 @@ fn load_exports(atoms: &[Atom], export_chunk: &ExpTChunk) -> Exports {
     export_chunk
         .exports
         .iter()
-        .map(|export| (atoms[export.function as usize], export.arity))
+        .map(|export| (atoms[export.function as usize - 1], export.arity))
         .collect()
 }
