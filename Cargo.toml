@@ -8,3 +8,7 @@ edition = "2018"
 beam_file = "0.2.4"
 string-interner = "0.12.1"
 anyhow = "1.0.35"
+fxhash = "0.2.1"
+
+[profile.release]
+debug = true

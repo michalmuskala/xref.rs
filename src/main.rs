@@ -23,16 +23,18 @@ type Modules = HashMap<Atom, (Imports, Exports)>;
 
 // type Result<A> = std::result::Result<A, Error>;
 
+type Interner = StringInterner<SymbolU32, string_interner::DefaultBackend<SymbolU32>, fxhash::FxBuildHasher>;
+
 fn main() -> Result<()> {
     let mut modules = HashMap::new();
-    let mut interner = StringInterner::new();
+    let mut interner: Interner = StringInterner::new();
 
     let args: Vec<_> = env::args().collect();
     let path = &args[1];
 
     let (app, loaded_modules) = read_app(&mut interner, &mut modules, Path::new(path))?;
 
-    println!("{}: {} modules", app, loaded_modules.len());
+    println!("{}: {} modules", interner.resolve(app.0).unwrap(), loaded_modules.len());
     println!("total modules: {}", modules.keys().len());
     println!("total atoms: {}", interner.len());
 
@@ -40,10 +42,10 @@ fn main() -> Result<()> {
 }
 
 fn read_app(
-    interner: &mut StringInterner,
+    interner: &mut Interner,
     modules: &mut Modules,
     ebin_path: &Path,
-) -> Result<(String, Vec<Atom>)> {
+) -> Result<(Atom, Vec<Atom>)> {
     let mut app_modules = vec![];
     let mut app_name = None;
 
@@ -61,8 +63,9 @@ fn read_app(
                     modules.insert(module, (imports, exports));
                 }
                 "app" => {
-                    app_name = path.file_stem().and_then(OsStr::to_str).map(str::to_string);
+                    app_name = path.file_stem().and_then(OsStr::to_str).map(|app| Atom(interner.get_or_intern(app)));
                 }
+                "appup" => continue,
                 _ => anyhow::bail!("unexpected file: {:?}", path),
             }
         }
@@ -72,7 +75,7 @@ fn read_app(
 }
 
 fn read_module(
-    interner: &mut StringInterner,
+    interner: &mut Interner,
     path: &Path,
 ) -> Result<(Atom, Imports, Exports), beam_file::Error> {
     let beam = StandardBeamFile::from_file(path)?;
@@ -97,7 +100,7 @@ fn read_module(
     Ok((atoms[0], imports, exports))
 }
 
-fn load_atoms(interner: &mut StringInterner, atom_chunk: &AtomChunk) -> Vec<Atom> {
+fn load_atoms(interner: &mut Interner, atom_chunk: &AtomChunk) -> Vec<Atom> {
     atom_chunk
         .atoms
         .iter()
