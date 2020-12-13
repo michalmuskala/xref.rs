@@ -1,69 +1,79 @@
-use std::{collections::HashMap, ffi::OsStr, fs::{self, DirEntry}, path::{Path, PathBuf}, sync::Mutex};
+use std::{
+    ffi::OsStr,
+    fs::{self, DirEntry},
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use anyhow::{Context, Result};
 use beam_file::{
     chunk::{AtomChunk, ExpTChunk, ImpTChunk, StandardChunk},
     StandardBeamFile,
 };
+use fxhash::FxHashMap;
 use rayon::prelude::*;
 use string_interner::{symbol::SymbolU32, DefaultBackend, StringInterner};
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
 pub struct Atom(SymbolU32);
 
-type Imports = HashMap<Atom, Vec<(Atom, u32)>>;
-
+type Imports = FxHashMap<Atom, Vec<(Atom, u32)>>;
 type Exports = Vec<(Atom, u32)>;
-
-type Modules = HashMap<Atom, (Imports, Exports)>;
+type Modules = FxHashMap<Atom, (Imports, Exports)>;
+type Apps = FxHashMap<Atom, Vec<Atom>>;
 
 type Interner = StringInterner<SymbolU32, DefaultBackend<SymbolU32>, fxhash::FxBuildHasher>;
 
 pub struct Loader {
     interner: Mutex<Interner>,
     modules: Mutex<Modules>,
+    apps: Mutex<Apps>,
 }
 
 impl Loader {
     pub fn new() -> Loader {
         Loader {
-            modules: Mutex::new(HashMap::new()),
             interner: Mutex::new(StringInterner::new()),
+            modules: Mutex::new(FxHashMap::default()),
+            apps: Mutex::new(FxHashMap::default()),
         }
     }
 
     pub fn read_libs(&self, paths: &[PathBuf]) -> Result<()> {
-        let dirs = paths
-            .iter()
+        paths
+            .par_iter()
             .map(|path| fs::read_dir(path))
             .filter_map(|dirs| dirs.ok())
-            .flatten()
+            .flat_map(|dirs| dirs.par_bridge())
             .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_name().to_str().map_or(false, |name| !name.starts_with(".")));
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .map_or(false, |name| !name.starts_with("."))
+            })
+            .try_for_each(|entry: DirEntry| {
+                let path = entry.path();
+                let metadata = fs::metadata(&path)?;
 
-        dirs.par_bridge().try_for_each(|entry: DirEntry| {
-            let path = entry.path();
-            let metadata = fs::metadata(&path)?;
+                if metadata.is_dir() {
+                    let ebin_path = path.join("ebin");
+                    let (app, loaded_modules) = self.read_app(&ebin_path)?;
 
-            if metadata.is_dir() {
-                let ebin_path = path.join("ebin");
-                let (_app, _loaded_modules) = self.read_app(&ebin_path)?;
+                    let mut apps = self.apps.lock().unwrap();
+                    apps.insert(app, loaded_modules);
+                }
 
-                // let interner = self.interner.lock().unwrap();
-
-                // println!(
-                //     "{}: {} modules",
-                //     interner.resolve(app.0).unwrap(),
-                //     loaded_modules.len()
-                // );
-            }
-
-            Ok(())
-        })
+                Ok(())
+            })
     }
 
-    pub fn finish(self) -> (Interner, Modules) {
-        (self.interner.into_inner().unwrap(), self.modules.into_inner().unwrap())
+    pub fn finish(self) -> (Interner, Modules, Apps) {
+        (
+            self.interner.into_inner().unwrap(),
+            self.modules.into_inner().unwrap(),
+            self.apps.into_inner().unwrap(),
+        )
     }
 
     fn read_app(&self, ebin_path: &Path) -> Result<(Atom, Vec<Atom>)> {
@@ -77,9 +87,10 @@ impl Loader {
             if let Some(extension) = path.extension().and_then(OsStr::to_str) {
                 match extension {
                     "beam" => {
-                        let (module, imports, exports) = self
-                            .read_module(&path)
-                            .with_context(|| format!("Failed to read BEAM file: {:?}", &path))?;
+                        let (module, imports, exports) =
+                            self.read_module(&path).with_context(|| {
+                                format!("failed to read BEAM file: {}", path.display())
+                            })?;
 
                         let mut modules = self.modules.lock().unwrap();
 
@@ -98,7 +109,10 @@ impl Loader {
             }
         }
 
-        Ok((app_name.unwrap(), app_modules))
+        Ok((
+            app_name.with_context(|| format!("missing .app file in {}", ebin_path.display()))?,
+            app_modules,
+        ))
     }
 
     fn read_module(&self, path: &Path) -> Result<(Atom, Imports, Exports)> {
@@ -137,7 +151,7 @@ fn load_atoms(interner: &mut Interner, atom_chunk: &AtomChunk) -> Vec<Atom> {
 }
 
 fn load_imports(atoms: &[Atom], import_chunk: &ImpTChunk) -> Imports {
-    let mut imports: HashMap<Atom, Vec<_>> = HashMap::new();
+    let mut imports: Imports = FxHashMap::default();
 
     for import in import_chunk.imports.iter() {
         imports

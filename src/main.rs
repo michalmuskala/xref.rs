@@ -16,9 +16,10 @@ fn main() -> Result<()> {
 
     loader.read_libs(&args.lib_paths)?;
 
-    let (interner, modules) = loader.finish();
+    let (interner, modules, apps) = loader.finish();
 
-    println!("\ntotal modules: {}", modules.len());
+    println!("\ntotal apps: {}", apps.len());
+    println!("total modules: {}", modules.len());
     println!("total atoms: {}", interner.len());
 
     Ok(())
