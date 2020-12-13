@@ -80,16 +80,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pico-args"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28b9b4df73455c861d7cbf8be42f01d3b373ed7f02e378d55fa84eafc6f638b1"
+
+[[package]]
 name = "rle-decode-fast"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cabe4fa914dec5870285fa7f71f602645da47c486e68486d2b4ceb4a343e90ac"
-
-[[package]]
-name = "serde"
-version = "1.0.118"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06c64263859d87aa2eb554587e2d23183398d617427327cf2b3d0ed8c69e4800"
 
 [[package]]
 name = "string-interner"
@@ -99,7 +99,6 @@ checksum = "969ae753ff8a0c6d71d6e3bd799e565be6a02fd68bbf70c252e1d084c8bd5764"
 dependencies = [
  "cfg-if",
  "hashbrown",
- "serde",
 ]
 
 [[package]]
@@ -115,5 +114,6 @@ dependencies = [
  "anyhow",
  "beam_file",
  "fxhash",
+ "pico-args",
  "string-interner",
 ]

@@ -1,4 +1,10 @@
-use std::{collections::HashMap, env, ffi::OsStr, fs, path::Path};
+use std::{
+    collections::HashMap,
+    env,
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use beam_file::{
@@ -26,14 +32,19 @@ type Modules = HashMap<Atom, (Imports, Exports)>;
 type Interner =
     StringInterner<SymbolU32, string_interner::DefaultBackend<SymbolU32>, fxhash::FxBuildHasher>;
 
+struct Args {
+    lib_paths: Vec<PathBuf>,
+}
+
 fn main() -> Result<()> {
     let mut modules = HashMap::new();
     let mut interner: Interner = StringInterner::new();
 
-    let args: Vec<_> = env::args().collect();
+    let args = parse_args()?;
 
-    read_libs(&mut interner, &mut modules, Path::new(&args[1]))?;
-    read_libs(&mut interner, &mut modules, Path::new(&args[2]))?;
+    for lib in args.lib_paths {
+        read_libs(&mut interner, &mut modules, &lib)?;
+    }
 
     println!("\ntotal modules: {}", modules.keys().len());
     println!("total atoms: {}", interner.len());
@@ -41,10 +52,24 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn parse_args() -> Result<Args> {
+    let mut args = pico_args::Arguments::from_env();
+
+    let parsed = Args {
+        lib_paths: args.values_from_str("--lib-path")?
+    };
+
+    args.finish()?;
+
+    Ok(parsed)
+}
+
 fn read_libs(interner: &mut Interner, modules: &mut Modules, path: &Path) -> Result<()> {
-    let dirs = fs::read_dir(path)?
-        .filter_map(|f| f.ok())
-        .filter(|f| f.file_name().to_str().map_or(false, |name| !name.starts_with(".")));
+    let dirs = fs::read_dir(path)?.filter_map(|f| f.ok()).filter(|f| {
+        f.file_name()
+            .to_str()
+            .map_or(false, |name| !name.starts_with("."))
+    });
 
     for entry in dirs {
         let path = entry.path();
