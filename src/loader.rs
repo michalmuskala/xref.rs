@@ -10,19 +10,9 @@ use beam_file::{
     chunk::{AtomChunk, ExpTChunk, ImpTChunk, StandardChunk},
     StandardBeamFile,
 };
-use fxhash::FxHashMap;
 use rayon::prelude::*;
-use string_interner::{symbol::SymbolU32, DefaultBackend, StringInterner};
 
-#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
-pub struct Atom(SymbolU32);
-
-type Imports = FxHashMap<Atom, Vec<(Atom, u32)>>;
-type Exports = Vec<(Atom, u32)>;
-type Modules = FxHashMap<Atom, (Imports, Exports)>;
-type Apps = FxHashMap<Atom, Vec<Atom>>;
-
-type Interner = StringInterner<SymbolU32, DefaultBackend<SymbolU32>, fxhash::FxBuildHasher>;
+use crate::types::{Apps, Atom, Exports, Imports, Interner, Modules};
 
 pub struct Loader {
     interner: Mutex<Interner>,
@@ -33,9 +23,9 @@ pub struct Loader {
 impl Loader {
     pub fn new() -> Loader {
         Loader {
-            interner: Mutex::new(StringInterner::new()),
-            modules: Mutex::new(FxHashMap::default()),
-            apps: Mutex::new(FxHashMap::default()),
+            interner: Mutex::new(Interner::new()),
+            modules: Mutex::new(Modules::default()),
+            apps: Mutex::new(Apps::default()),
         }
     }
 
@@ -53,11 +43,9 @@ impl Loader {
                     .map_or(false, |name| !name.starts_with("."))
             })
             .try_for_each(|entry: DirEntry| {
-                let path = entry.path();
-                let metadata = fs::metadata(&path)?;
+                let ebin_path = entry.path().join("ebin");
 
-                if metadata.is_dir() {
-                    let ebin_path = path.join("ebin");
+                if ebin_path.is_dir() {
                     let (app, loaded_modules) = self.read_app(&ebin_path)?;
 
                     let mut apps = self.apps.lock().unwrap();
@@ -151,7 +139,7 @@ fn load_atoms(interner: &mut Interner, atom_chunk: &AtomChunk) -> Vec<Atom> {
 }
 
 fn load_imports(atoms: &[Atom], import_chunk: &ImpTChunk) -> Imports {
-    let mut imports: Imports = FxHashMap::default();
+    let mut imports = Imports::default();
 
     for import in import_chunk.imports.iter() {
         imports

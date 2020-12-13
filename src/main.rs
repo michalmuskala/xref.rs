@@ -2,8 +2,11 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
+mod analyzer;
 mod loader;
+mod types;
 
+use analyzer::Analyzer;
 use loader::Loader;
 
 struct Args {
@@ -21,6 +24,15 @@ fn main() -> Result<()> {
     println!("\ntotal apps: {}", apps.len());
     println!("total modules: {}", modules.len());
     println!("total atoms: {}", interner.len());
+
+    let analyzer = Analyzer::new(modules);
+
+    let results = analyzer.global();
+
+    println!("\n");
+    for (module, result) in results {
+        println!("{}: {}", module.resolve(&interner).unwrap(), result.fmt(&interner))
+    }
 
     Ok(())
 }
