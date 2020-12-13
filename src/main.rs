@@ -12,14 +12,14 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = parse_args()?;
-    let mut loader = Loader::new();
+    let loader = Loader::new();
 
-    for lib in args.lib_paths {
-        loader.read_libs(&lib)?;
-    }
+    loader.read_libs(&args.lib_paths)?;
 
-    println!("\ntotal modules: {}", loader.loaded_modules());
-    println!("total atoms: {}", loader.loaded_atoms());
+    let (interner, modules) = loader.finish();
+
+    println!("\ntotal modules: {}", modules.len());
+    println!("total atoms: {}", interner.len());
 
     Ok(())
 }

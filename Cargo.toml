@@ -10,6 +10,7 @@ string-interner = { version = "0.12.1", default-features = false, features = ["s
 anyhow = "1.0.35"
 fxhash = "0.2.1"
 pico-args = "0.3.4"
+rayon = "1.5"
 
 [profile.release]
 debug = true

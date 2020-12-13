@@ -1,14 +1,15 @@
-use std::{collections::HashMap, ffi::OsStr, fs, path::Path};
+use std::{collections::HashMap, ffi::OsStr, fs::{self, DirEntry}, path::{Path, PathBuf}, sync::Mutex};
 
 use anyhow::{Context, Result};
 use beam_file::{
     chunk::{AtomChunk, ExpTChunk, ImpTChunk, StandardChunk},
     StandardBeamFile,
 };
+use rayon::prelude::*;
 use string_interner::{symbol::SymbolU32, DefaultBackend, StringInterner};
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
-struct Atom(SymbolU32);
+pub struct Atom(SymbolU32);
 
 type Imports = HashMap<Atom, Vec<(Atom, u32)>>;
 
@@ -19,53 +20,53 @@ type Modules = HashMap<Atom, (Imports, Exports)>;
 type Interner = StringInterner<SymbolU32, DefaultBackend<SymbolU32>, fxhash::FxBuildHasher>;
 
 pub struct Loader {
-    interner: Interner,
-    modules: Modules,
+    interner: Mutex<Interner>,
+    modules: Mutex<Modules>,
 }
 
 impl Loader {
     pub fn new() -> Loader {
         Loader {
-            modules: HashMap::new(),
-            interner: StringInterner::new(),
+            modules: Mutex::new(HashMap::new()),
+            interner: Mutex::new(StringInterner::new()),
         }
     }
 
-    pub fn read_libs(&mut self, path: &Path) -> Result<()> {
-        let dirs = fs::read_dir(path)?.filter_map(|f| f.ok()).filter(|f| {
-            f.file_name()
-                .to_str()
-                .map_or(false, |name| !name.starts_with("."))
-        });
+    pub fn read_libs(&self, paths: &[PathBuf]) -> Result<()> {
+        let dirs = paths
+            .iter()
+            .map(|path| fs::read_dir(path))
+            .filter_map(|dirs| dirs.ok())
+            .flatten()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_str().map_or(false, |name| !name.starts_with(".")));
 
-        for entry in dirs {
+        dirs.par_bridge().try_for_each(|entry: DirEntry| {
             let path = entry.path();
             let metadata = fs::metadata(&path)?;
 
             if metadata.is_dir() {
                 let ebin_path = path.join("ebin");
-                let (app, loaded_modules) = self.read_app(&ebin_path)?;
+                let (_app, _loaded_modules) = self.read_app(&ebin_path)?;
 
-                println!(
-                    "{}: {} modules",
-                    self.interner.resolve(app.0).unwrap(),
-                    loaded_modules.len()
-                );
+                // let interner = self.interner.lock().unwrap();
+
+                // println!(
+                //     "{}: {} modules",
+                //     interner.resolve(app.0).unwrap(),
+                //     loaded_modules.len()
+                // );
             }
-        }
 
-        Ok(())
+            Ok(())
+        })
     }
 
-    pub fn loaded_modules(&self) -> usize {
-        self.modules.len()
+    pub fn finish(self) -> (Interner, Modules) {
+        (self.interner.into_inner().unwrap(), self.modules.into_inner().unwrap())
     }
 
-    pub fn loaded_atoms(&self) -> usize {
-        self.interner.len()
-    }
-
-    fn read_app(&mut self, ebin_path: &Path) -> Result<(Atom, Vec<Atom>)> {
+    fn read_app(&self, ebin_path: &Path) -> Result<(Atom, Vec<Atom>)> {
         let mut app_modules = vec![];
         let mut app_name = None;
 
@@ -80,14 +81,16 @@ impl Loader {
                             .read_module(&path)
                             .with_context(|| format!("Failed to read BEAM file: {:?}", &path))?;
 
+                        let mut modules = self.modules.lock().unwrap();
+
                         app_modules.push(module);
-                        self.modules.insert(module, (imports, exports));
+                        modules.insert(module, (imports, exports));
                     }
                     "app" => {
                         app_name = path
                             .file_stem()
                             .and_then(OsStr::to_str)
-                            .map(|app| Atom(self.interner.get_or_intern(app)));
+                            .map(|app| Atom(self.interner.lock().unwrap().get_or_intern(app)));
                     }
                     "appup" | "hrl" | "am" => continue,
                     _ => anyhow::bail!("unexpected file: {:?}", path),
@@ -98,7 +101,7 @@ impl Loader {
         Ok((app_name.unwrap(), app_modules))
     }
 
-    fn read_module(&mut self, path: &Path) -> Result<(Atom, Imports, Exports)> {
+    fn read_module(&self, path: &Path) -> Result<(Atom, Imports, Exports)> {
         let beam = StandardBeamFile::from_file(path)?;
 
         let mut atom_chunk = None;
@@ -114,7 +117,10 @@ impl Loader {
             }
         }
 
-        let atoms = load_atoms(&mut self.interner, &atom_chunk.unwrap());
+        let atoms = {
+            let mut interner = self.interner.lock().unwrap();
+            load_atoms(&mut interner, &atom_chunk.unwrap())
+        };
         let imports = load_imports(&atoms, &import_chunk.unwrap());
         let exports = load_exports(&atoms, &export_chunk.unwrap());
 
