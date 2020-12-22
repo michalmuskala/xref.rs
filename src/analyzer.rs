@@ -1,5 +1,3 @@
-use std::fmt;
-
 use rayon::prelude::*;
 
 use crate::types::{Atom, Interner, Modules};
@@ -23,14 +21,6 @@ impl AnalysisResult {
         }
     }
 }
-// impl fmt::Display for AnalysisResult {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match self {
-//             AnalysisResult::MissingModule(Atom)
-//         }
-//         todo!()
-//     }
-// }
 
 impl Analyzer {
     pub fn new(modules: Modules) -> Analyzer {

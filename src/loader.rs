@@ -1,6 +1,6 @@
 use std::{
     ffi::OsStr,
-    fs::{self, DirEntry},
+    fs,
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -32,18 +32,27 @@ impl Loader {
     pub fn read_libs(&self, paths: &[PathBuf]) -> Result<()> {
         paths
             .par_iter()
-            .map(|path| fs::read_dir(path))
-            .filter_map(|dirs| dirs.ok())
-            .flat_map(|dirs| dirs.par_bridge())
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                entry
-                    .file_name()
-                    .to_str()
-                    .map_or(false, |name| !name.starts_with("."))
+            .flat_map(|path| match fs::read_dir(path) {
+                Ok(dirs) => dirs
+                    .into_iter()
+                    .map(|result| {
+                        result.with_context(|| format!("reading lib path: {}", path.display()))
+                    })
+                    .collect(),
+                Err(err) => {
+                    vec![Err(err).with_context(|| format!("reading lib path: {}", path.display()))]
+                }
             })
-            .try_for_each(|entry: DirEntry| {
-                let ebin_path = entry.path().join("ebin");
+            .filter(|entry| {
+                entry.as_ref().map_or(true, |entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .map_or(false, |name| !name.starts_with("."))
+                })
+            })
+            .try_for_each(|entry| {
+                let ebin_path = entry?.path().join("ebin");
 
                 if ebin_path.is_dir() {
                     let (app, loaded_modules) = self.read_app(&ebin_path)?;
