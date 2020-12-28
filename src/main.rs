@@ -10,9 +10,11 @@ use analyzer::Analyzer;
 use loader::Loader;
 use types::Atom;
 
+#[derive(Debug)]
 struct Args {
     lib_paths: Vec<PathBuf>,
     analyze: Vec<String>,
+    analyze_all: bool,
 }
 
 fn main() -> Result<()> {
@@ -28,13 +30,16 @@ fn main() -> Result<()> {
     println!("total modules: {}", modules.len());
     println!("total atoms: {}", interner.len());
 
-    let analyzer = Analyzer::new(modules, app_modules.clone());
+    let analyzer = Analyzer::new(modules, app_modules.clone(), app_deps.clone());
 
-    let analyze: Vec<_> = args
-        .analyze
-        .iter()
-        .map(|app| Atom::intern(&mut interner, app))
-        .collect();
+    let analyze: Vec<_> = if args.analyze_all {
+        app_deps.nodes().collect()
+    } else {
+        args.analyze
+            .iter()
+            .map(|app| Atom::intern(&mut interner, app))
+            .collect()
+    };
 
     println!("\n");
     for &app in &analyze {
@@ -68,6 +73,7 @@ fn parse_args() -> Result<Args> {
     let parsed = Args {
         lib_paths: args.values_from_str("--lib-path")?,
         analyze: args.values_from_str("--analyze")?,
+        analyze_all: args.contains("--analyze-all"),
     };
 
     args.finish()?;

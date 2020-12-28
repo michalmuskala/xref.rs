@@ -40,6 +40,8 @@ impl Loader {
     }
 
     pub fn read_libs(&self, paths: &[PathBuf]) -> Result<()> {
+        let erts = Atom(self.interner.lock().unwrap().get_or_intern_static("erts"));
+
         paths
             .par_iter()
             .flat_map(|path| match fs::read_dir(path) {
@@ -69,6 +71,8 @@ impl Loader {
 
                     {
                         let mut app_deps = self.app_deps.lock().unwrap();
+                        // Dependency on erts is implicit
+                        app_deps.add_edge(app.name, erts, ());
                         for &dep in &app.deps {
                             app_deps.add_edge(app.name, dep, ());
                         }
@@ -145,7 +149,6 @@ impl Loader {
             static ref APPS: Regex =
                 Regex::new(r"\{\s*(?:included_)?applications\s*,\s*\[\s*([0-9a-z_,\s]+)\s*\]\s*\}")
                     .unwrap();
-            static ref COMMA: Regex = Regex::new(r"\s*,\s*").unwrap();
         }
 
         let text = fs::read_to_string(path)?;
@@ -153,7 +156,8 @@ impl Loader {
         let deps = {
             let mut interner = self.interner.lock().unwrap();
             APPS.captures_iter(&text)
-                .flat_map(|caps| COMMA.split(caps.get(1).unwrap().as_str()))
+                .flat_map(|caps| caps.get(1).unwrap().as_str().split(","))
+                .map(|app_string| app_string.trim())
                 .map(|app| Atom(interner.get_or_intern(app)))
                 .collect()
         };
