@@ -21,13 +21,14 @@ fn main() -> Result<()> {
 
     loader.read_libs(&args.lib_paths)?;
 
-    let (mut interner, modules, apps) = loader.finish();
+    let (mut interner, modules, app_modules, app_deps) = loader.finish();
 
-    println!("\ntotal apps: {}", apps.len());
+    println!("\ntotal apps: {}", app_modules.len());
+    println!("total app dependencies: {}", app_deps.edge_count());
     println!("total modules: {}", modules.len());
     println!("total atoms: {}", interner.len());
 
-    let analyzer = Analyzer::new(modules, apps.clone());
+    let analyzer = Analyzer::new(modules, app_modules.clone());
 
     let analyze: Vec<_> = args
         .analyze
@@ -36,13 +37,12 @@ fn main() -> Result<()> {
         .collect();
 
     println!("\n");
-    for app in &analyze {
-        let app = apps.get(app).unwrap();
+    for &app in &analyze {
         println!(
             "{}: {:?}",
-            app.name.resolve(&interner).unwrap(),
-            app.deps
-                .iter()
+            app.resolve(&interner).unwrap(),
+            app_deps
+                .neighbors_directed(app, petgraph::EdgeDirection::Outgoing)
                 .flat_map(|name| name.resolve(&interner))
                 .collect::<Vec<_>>()
         )

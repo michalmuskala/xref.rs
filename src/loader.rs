@@ -14,12 +14,19 @@ use lazy_static::lazy_static;
 use rayon::prelude::*;
 use regex::Regex;
 
-use crate::types::{App, Apps, Atom, Exports, Imports, Interner, Modules};
+use crate::types::{AppDeps, AppModules, Atom, Exports, Imports, Interner, Modules};
 
 pub struct Loader {
     interner: Mutex<Interner>,
     modules: Mutex<Modules>,
-    apps: Mutex<Apps>,
+    app_modules: Mutex<AppModules>,
+    app_deps: Mutex<AppDeps>,
+}
+
+struct App {
+    pub name: Atom,
+    pub deps: Vec<Atom>,
+    pub modules: Vec<Atom>,
 }
 
 impl Loader {
@@ -27,7 +34,8 @@ impl Loader {
         Loader {
             interner: Mutex::new(Interner::new()),
             modules: Mutex::new(Modules::default()),
-            apps: Mutex::new(Apps::default()),
+            app_modules: Mutex::new(AppModules::default()),
+            app_deps: Mutex::new(AppDeps::default()),
         }
     }
 
@@ -59,19 +67,28 @@ impl Loader {
                 if ebin_path.is_dir() {
                     let app = self.read_app(&ebin_path)?;
 
-                    let mut apps = self.apps.lock().unwrap();
-                    apps.insert(app.name, app);
+                    {
+                        let mut app_deps = self.app_deps.lock().unwrap();
+                        for &dep in &app.deps {
+                            app_deps.add_edge(app.name, dep, ());
+                        }
+                    }
+                    {
+                        let mut apps = self.app_modules.lock().unwrap();
+                        apps.insert(app.name, app.modules);
+                    }
                 }
 
                 Ok(())
             })
     }
 
-    pub fn finish(self) -> (Interner, Modules, Apps) {
+    pub fn finish(self) -> (Interner, Modules, AppModules, AppDeps) {
         (
             self.interner.into_inner().unwrap(),
             self.modules.into_inner().unwrap(),
-            self.apps.into_inner().unwrap(),
+            self.app_modules.into_inner().unwrap(),
+            self.app_deps.into_inner().unwrap(),
         )
     }
 

@@ -1,21 +1,16 @@
 use fxhash::FxHashMap;
+use petgraph::graphmap::DiGraphMap;
 use string_interner::{symbol::SymbolU32, DefaultBackend, StringInterner};
 
 pub type Imports = FxHashMap<Atom, Vec<(Atom, u32)>>;
 pub type Exports = Vec<(Atom, u32)>;
 pub type Modules = FxHashMap<Atom, (Imports, Exports)>;
-pub type Apps = FxHashMap<Atom, App>;
-
-#[derive(Clone)]
-pub struct App {
-    pub name: Atom,
-    pub deps: Vec<Atom>,
-    pub modules: Vec<Atom>,
-}
+pub type AppModules = FxHashMap<Atom, Vec<Atom>>;
+pub type AppDeps = DiGraphMap<Atom, ()>;
 
 pub type Interner = StringInterner<SymbolU32, DefaultBackend<SymbolU32>, fxhash::FxBuildHasher>;
 
-#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Copy, Clone)]
 pub struct Atom(pub SymbolU32);
 
 impl Atom {
