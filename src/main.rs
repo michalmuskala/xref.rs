@@ -8,9 +8,11 @@ mod types;
 
 use analyzer::Analyzer;
 use loader::Loader;
+use types::Atom;
 
 struct Args {
     lib_paths: Vec<PathBuf>,
+    analyze: Vec<String>
 }
 
 fn main() -> Result<()> {
@@ -19,15 +21,17 @@ fn main() -> Result<()> {
 
     loader.read_libs(&args.lib_paths)?;
 
-    let (interner, modules, apps) = loader.finish();
+    let (mut interner, modules, apps) = loader.finish();
 
     println!("\ntotal apps: {}", apps.len());
     println!("total modules: {}", modules.len());
     println!("total atoms: {}", interner.len());
 
-    let analyzer = Analyzer::new(modules);
+    let analyzer = Analyzer::new(modules, apps);
 
-    let results = analyzer.global();
+    let analyze: Vec<_> = args.analyze.iter().map(|app| Atom::intern(&mut interner, app)).collect();
+
+    let results = analyzer.run(&analyze);
 
     println!("\n");
     for (module, result) in results {
@@ -42,6 +46,7 @@ fn parse_args() -> Result<Args> {
 
     let parsed = Args {
         lib_paths: args.values_from_str("--lib-path")?,
+        analyze: args.values_from_str("--analyze")?
     };
 
     args.finish()?;

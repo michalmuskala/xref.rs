@@ -12,6 +12,10 @@ pub type Interner = StringInterner<SymbolU32, DefaultBackend<SymbolU32>, fxhash:
 pub struct Atom(pub SymbolU32);
 
 impl Atom {
+    pub fn intern(interner: &mut Interner, value: &str) -> Atom {
+        Atom(interner.get_or_intern(value))
+    }
+
     pub fn resolve<'a>(&self, interner: &'a Interner) -> Option<&'a str> {
         interner.resolve(self.0)
     }

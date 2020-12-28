@@ -1,9 +1,10 @@
 use rayon::prelude::*;
 
-use crate::types::{Atom, Interner, Modules};
+use crate::types::{Apps, Atom, Interner, Modules};
 
 pub struct Analyzer {
     modules: Modules,
+    apps: Apps,
 }
 
 pub enum AnalysisResult {
@@ -23,14 +24,15 @@ impl AnalysisResult {
 }
 
 impl Analyzer {
-    pub fn new(modules: Modules) -> Analyzer {
-        Analyzer { modules }
+    pub fn new(modules: Modules, apps: Apps) -> Analyzer {
+        Analyzer { modules, apps }
     }
 
-    pub fn global(&self) -> Vec<(Atom, AnalysisResult)> {
-        self.modules
-            .par_iter()
-            .flat_map(|(&module, (imports, _))| {
+    pub fn run(&self, apps: &[Atom]) -> Vec<(Atom, AnalysisResult)> {
+        apps.par_iter()
+            .flat_map(|app| self.apps.get(app).unwrap())
+            .flat_map(|&module| {
+                let (imports, _) = self.modules.get(&module).unwrap();
                 imports
                     .par_iter()
                     .flat_map(move |(&from, functions)| match self.modules.get(&from) {
