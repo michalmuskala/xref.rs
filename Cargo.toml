@@ -12,6 +12,8 @@ thiserror = "1.0"
 fxhash = "0.2.1"
 pico-args = "0.3.4"
 rayon = "1.5"
+regex = "1.4"
+lazy_static = "1.4"
 
 [profile.release]
 debug = true

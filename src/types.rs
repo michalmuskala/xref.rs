@@ -4,7 +4,14 @@ use string_interner::{DefaultBackend, StringInterner, symbol::SymbolU32};
 pub type Imports = FxHashMap<Atom, Vec<(Atom, u32)>>;
 pub type Exports = Vec<(Atom, u32)>;
 pub type Modules = FxHashMap<Atom, (Imports, Exports)>;
-pub type Apps = FxHashMap<Atom, Vec<Atom>>;
+pub type Apps = FxHashMap<Atom, App>;
+
+#[derive(Clone)]
+pub struct App {
+    pub name: Atom,
+    pub deps: Vec<Atom>,
+    pub modules: Vec<Atom>,
+}
 
 pub type Interner = StringInterner<SymbolU32, DefaultBackend<SymbolU32>, fxhash::FxBuildHasher>;
 

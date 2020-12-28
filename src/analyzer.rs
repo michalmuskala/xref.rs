@@ -30,7 +30,7 @@ impl Analyzer {
 
     pub fn run(&self, apps: &[Atom]) -> Vec<(Atom, AnalysisResult)> {
         apps.par_iter()
-            .flat_map(|app| self.apps.get(app).unwrap())
+            .flat_map(|app| self.apps[app].modules.par_iter())
             .flat_map(|&module| {
                 let (imports, _) = self.modules.get(&module).unwrap();
                 imports

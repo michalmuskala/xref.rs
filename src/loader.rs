@@ -10,9 +10,11 @@ use beam_file::{
     chunk::{AtomChunk, ExpTChunk, ImpTChunk, StandardChunk},
     StandardBeamFile,
 };
+use lazy_static::lazy_static;
 use rayon::prelude::*;
+use regex::Regex;
 
-use crate::types::{Apps, Atom, Exports, Imports, Interner, Modules};
+use crate::types::{App, Apps, Atom, Exports, Imports, Interner, Modules};
 
 pub struct Loader {
     interner: Mutex<Interner>,
@@ -55,10 +57,10 @@ impl Loader {
                 let ebin_path = entry?.path().join("ebin");
 
                 if ebin_path.is_dir() {
-                    let (app, loaded_modules) = self.read_app(&ebin_path)?;
+                    let app = self.read_app(&ebin_path)?;
 
                     let mut apps = self.apps.lock().unwrap();
-                    apps.insert(app, loaded_modules);
+                    apps.insert(app.name, app);
                 }
 
                 Ok(())
@@ -73,9 +75,10 @@ impl Loader {
         )
     }
 
-    fn read_app(&self, ebin_path: &Path) -> Result<(Atom, Vec<Atom>)> {
+    fn read_app(&self, ebin_path: &Path) -> Result<App> {
         let mut app_modules = vec![];
         let mut app_name = None;
+        let mut app_deps = None;
 
         for entry in fs::read_dir(ebin_path)? {
             let entry = entry?;
@@ -99,6 +102,9 @@ impl Loader {
                             .file_stem()
                             .and_then(OsStr::to_str)
                             .map(|app| Atom(self.interner.lock().unwrap().get_or_intern(app)));
+                        app_deps = Some(self.read_app_deps(&path).with_context(|| {
+                            format!("failed to parse .app file: {}", path.display())
+                        })?)
                     }
                     "appup" | "hrl" | "am" => continue,
                     _ => anyhow::bail!("unexpected file: {:?}", path),
@@ -106,10 +112,36 @@ impl Loader {
             }
         }
 
-        Ok((
-            app_name.with_context(|| format!("missing .app file in {}", ebin_path.display()))?,
-            app_modules,
-        ))
+        Ok(App {
+            name: app_name
+                .with_context(|| format!("missing .app file in {}", ebin_path.display()))?,
+            deps: app_deps.unwrap(),
+            modules: app_modules,
+        })
+    }
+
+    fn read_app_deps(&self, path: &Path) -> Result<Vec<Atom>> {
+        // This is a very naive way of extracting app dependency information
+        // based on a regex, to avoid full parsing. It will probably break
+        // at custom-built files, but should be fine with rebar3 emitted ones
+        lazy_static! {
+            static ref APPS: Regex =
+                Regex::new(r"\{\s*(?:included_)?applications\s*,\s*\[\s*([0-9a-z_,\s]+)\s*\]\s*\}")
+                    .unwrap();
+            static ref COMMA: Regex = Regex::new(r"\s*,\s*").unwrap();
+        }
+
+        let text = fs::read_to_string(path)?;
+
+        let deps = {
+            let mut interner = self.interner.lock().unwrap();
+            APPS.captures_iter(&text)
+                .flat_map(|caps| COMMA.split(caps.get(1).unwrap().as_str()))
+                .map(|app| Atom(interner.get_or_intern(app)))
+                .collect()
+        };
+
+        Ok(deps)
     }
 
     fn read_module(&self, path: &Path) -> Result<(Atom, Imports, Exports)> {

@@ -27,9 +27,16 @@ fn main() -> Result<()> {
     println!("total modules: {}", modules.len());
     println!("total atoms: {}", interner.len());
 
-    let analyzer = Analyzer::new(modules, apps);
+    let analyzer = Analyzer::new(modules, apps.clone());
+
 
     let analyze: Vec<_> = args.analyze.iter().map(|app| Atom::intern(&mut interner, app)).collect();
+
+    println!("\n");
+    for app in &analyze {
+        let app = apps.get(app).unwrap();
+        println!("{}: {:?}", app.name.resolve(&interner).unwrap(), app.deps.iter().flat_map(|name| name.resolve(&interner)).collect::<Vec<_>>())
+    }
 
     let results = analyzer.run(&analyze);
 
