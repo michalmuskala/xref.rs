@@ -1,5 +1,5 @@
 use fxhash::FxHashMap;
-use string_interner::{DefaultBackend, StringInterner, symbol::SymbolU32};
+use string_interner::{symbol::SymbolU32, DefaultBackend, StringInterner};
 
 pub type Imports = FxHashMap<Atom, Vec<(Atom, u32)>>;
 pub type Exports = Vec<(Atom, u32)>;

@@ -12,7 +12,7 @@ use types::Atom;
 
 struct Args {
     lib_paths: Vec<PathBuf>,
-    analyze: Vec<String>
+    analyze: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -29,20 +29,34 @@ fn main() -> Result<()> {
 
     let analyzer = Analyzer::new(modules, apps.clone());
 
-
-    let analyze: Vec<_> = args.analyze.iter().map(|app| Atom::intern(&mut interner, app)).collect();
+    let analyze: Vec<_> = args
+        .analyze
+        .iter()
+        .map(|app| Atom::intern(&mut interner, app))
+        .collect();
 
     println!("\n");
     for app in &analyze {
         let app = apps.get(app).unwrap();
-        println!("{}: {:?}", app.name.resolve(&interner).unwrap(), app.deps.iter().flat_map(|name| name.resolve(&interner)).collect::<Vec<_>>())
+        println!(
+            "{}: {:?}",
+            app.name.resolve(&interner).unwrap(),
+            app.deps
+                .iter()
+                .flat_map(|name| name.resolve(&interner))
+                .collect::<Vec<_>>()
+        )
     }
 
     let results = analyzer.run(&analyze);
 
     println!("\n");
     for (module, result) in results {
-        println!("{}: {}", module.resolve(&interner).unwrap(), result.fmt(&interner))
+        println!(
+            "{}: {}",
+            module.resolve(&interner).unwrap(),
+            result.fmt(&interner)
+        )
     }
 
     Ok(())
@@ -53,7 +67,7 @@ fn parse_args() -> Result<Args> {
 
     let parsed = Args {
         lib_paths: args.values_from_str("--lib-path")?,
-        analyze: args.values_from_str("--analyze")?
+        analyze: args.values_from_str("--analyze")?,
     };
 
     args.finish()?;
